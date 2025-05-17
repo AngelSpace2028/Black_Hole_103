@@ -1,6 +1,5 @@
 import os
 import sys
-import paq
 import random
 import struct
 import logging
@@ -16,19 +15,12 @@ except ImportError:
 
 # === Dictionary file list ===
 DICTIONARY_FILES = [
-    "1.txt",
-    "eng_news_2005_1M-sentences.txt",
-    "eng_news_2005_1M-words.txt",
-    "eng_news_2005_1M-sources.txt",
-    "eng_news_2005_1M-co_n.txt",
-    "eng_news_2005_1M-co_s.txt",
-    "eng_news_2005_1M-inv_so.txt",
-    "eng_news_2005_1M-meta.txt",
-    "Dictionary.txt",
+    "1.txt", "eng_news_2005_1M-sentences.txt", "eng_news_2005_1M-words.txt",
+    "eng_news_2005_1M-sources.txt", "eng_news_2005_1M-co_n.txt",
+    "eng_news_2005_1M-co_s.txt", "eng_news_2005_1M-inv_so.txt",
+    "eng_news_2005_1M-meta.txt", "Dictionary.txt",
     "the-complete-reference-html-css-fifth-edition.txt",
-    "words.txt.paq",
-    "lines.txt.paq",
-    "sentence.txt.paq"
+    "words.txt.paq", "lines.txt.paq", "sentence.txt.paq"
 ]
 
 # === Smart Compressor ===
@@ -50,17 +42,21 @@ class SmartCompressor:
         return data
 
     def huffman_compress(self, data):
+        # paq.compress expects bytes, ensure data is bytes
         compressed = paq.compress(data)
-        return bytearray(tqdm(compressed, desc="Huffman Compress", unit="B"))
+        return compressed
 
     def huffman_decompress(self, data):
+        # paq.decompress expects bytes, ensure data is bytes
         decompressed = paq.decompress(data)
-        return bytearray(tqdm(decompressed, desc="Huffman Decompress", unit="B"))
+        return decompressed
 
     def reversible_transform(self, data):
+        # XOR each byte with 0xAA
         return bytes([b ^ 0xAA for b in tqdm(data, desc="Transforming", unit="B")])
 
     def reverse_reversible_transform(self, data):
+        # The transform is symmetrical
         return self.reversible_transform(data)
 
     def generate_8byte_sha(self, file_path):
@@ -88,7 +84,13 @@ class SmartCompressor:
             original_data = f.read()
 
         transformed = self.reversible_transform(original_data)
-        compressed = self.huffman_compress(transformed)
+
+        transformed = bytearray(tqdm(transformed, desc="Preparing Data", unit="B"))
+
+        # Fix: convert to bytes before compression
+        compressed = self.huffman_compress(bytes(transformed))
+
+        compressed = bytearray(tqdm(compressed, desc="Compressed Output", unit="B"))
 
         if len(compressed) < len(original_data):
             with open(output_file, "wb") as f:
@@ -101,13 +103,18 @@ class SmartCompressor:
         with open(input_file, "rb") as f:
             compressed_data = f.read()
 
-        decompressed = self.huffman_decompress(compressed_data)
+        # Fix: convert to bytes before decompression
+        decompressed = self.huffman_decompress(bytes(compressed_data))
+
+        decompressed = bytearray(tqdm(decompressed, desc="Huffman Decompress", unit="B"))
+
         original = self.reverse_reversible_transform(decompressed)
 
         with open(output_file, "wb") as f:
             f.write(original)
 
         print(f"Smart decompression complete. Saved to {output_file}")
+
 
 # === XOR + PAQ Compressor ===
 def transform_with_pattern(data, chunk_size=4):
@@ -118,12 +125,9 @@ def transform_with_pattern(data, chunk_size=4):
     return transformed
 
 def is_prime(n):
-    if n < 2:
-        return False
-    if n == 2:
-        return True
-    if n % 2 == 0:
-        return False
+    if n < 2: return False
+    if n == 2: return True
+    if n % 2 == 0: return False
     for i in range(3, int(n**0.5)+1, 2):
         if n % i == 0:
             return False
@@ -150,6 +154,7 @@ def encode_with_paq():
         original = f.read()
 
     transformed = transform_with_pattern(original)
+
     compressed = paq.compress(bytes(transformed))
     compressed = bytearray(tqdm(compressed, desc="PAQ Compress", unit="B"))
 
@@ -171,7 +176,7 @@ def decode_with_paq():
     with open(input_file, 'rb') as f:
         compressed = f.read()
 
-    decompressed = paq.decompress(compressed)
+    decompressed = paq.decompress(bytes(compressed))
     decompressed = bytearray(tqdm(decompressed, desc="PAQ Decompress", unit="B"))
     recovered = transform_with_pattern(decompressed)
 
@@ -179,6 +184,7 @@ def decode_with_paq():
         f.write(recovered)
 
     print("Decoded and saved.")
+
 
 # === Main Menu ===
 def main():
