@@ -1,11 +1,13 @@
 import os
 import sys
-import zlib
+import paq
 import random
 import struct
 import logging
+import hashlib
+from tqdm import tqdm
 
-# Attempt to import the paq module
+# Try to import paq
 try:
     import paq
 except ImportError:
@@ -48,25 +50,48 @@ class SmartCompressor:
         return data
 
     def huffman_compress(self, data):
-        return zlib.compress(data)
+        return paq.compress(data)
 
     def huffman_decompress(self, data):
-        return zlib.decompress(data)
+        return paq.decompress(data)
 
     def reversible_transform(self, data):
-        return bytes([b ^ 0xAA for b in data])
+        return bytes([b ^ 0xAA for b in tqdm(data, desc="Transforming", unit="B")])
 
     def reverse_reversible_transform(self, data):
         return self.reversible_transform(data)
 
+    def generate_8byte_sha(self, file_path):
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+                full_hash = hashlib.sha256(data).digest()
+                return full_hash[:8]  # First 8 bytes
+        except Exception as e:
+            logging.error(f"Failed to generate SHA for {file_path}: {e}")
+            return None
+
     def compress(self, input_file, output_file):
+        if input_file.endswith(".paq") and (
+            "words" in input_file or "lines" in input_file or "sentence" in input_file
+        ):
+            sha = self.generate_8byte_sha(input_file)
+            if sha:
+                with open(output_file, "wb") as f:
+                    f.write(sha)
+                print(f"SHA-8 written to {output_file}: {sha.hex()}")
+            return
+
         with open(input_file, "rb") as f:
             original_data = f.read()
+
         transformed = self.reversible_transform(original_data)
         compressed = self.huffman_compress(transformed)
+
         if len(compressed) < len(original_data):
             with open(output_file, "wb") as f:
-                f.write(compressed)
+                for b in tqdm(compressed, desc="Writing compressed", unit="B"):
+                    f.write(bytes([b]))
             print(f"Smart compression successful. Saved to {output_file}")
         else:
             print("Compression not efficient. File not saved.")
@@ -74,15 +99,23 @@ class SmartCompressor:
     def decompress(self, input_file, output_file):
         with open(input_file, "rb") as f:
             compressed_data = f.read()
+
         decompressed = self.huffman_decompress(compressed_data)
         original = self.reverse_reversible_transform(decompressed)
+
         with open(output_file, "wb") as f:
-            f.write(original)
+            for b in tqdm(original, desc="Writing decompressed", unit="B"):
+                f.write(bytes([b]))
+
         print(f"Smart decompression complete. Saved to {output_file}")
 
 # === XOR + PAQ Compressor ===
 def transform_with_pattern(data, chunk_size=4):
-    return bytearray([b ^ 0xFF for b in data])
+    transformed = bytearray()
+    for i in tqdm(range(0, len(data), chunk_size), desc="XOR Transform", unit="chunks"):
+        chunk = data[i:i + chunk_size]
+        transformed.extend([b ^ 0xFF for b in chunk])
+    return transformed
 
 def is_prime(n):
     if n < 2: return False
@@ -102,15 +135,21 @@ def find_nearest_prime_around(n):
 def encode_with_paq():
     input_file = input("Enter input file: ")
     output_file = input("Enter output base name (.enc will be added): ")
+
     if not os.path.exists(input_file):
         print("Input file not found.")
         return
+
     with open(input_file, 'rb') as f:
         original = f.read()
+
     transformed = transform_with_pattern(original)
     compressed = paq.compress(bytes(transformed))
+
     with open(output_file + ".enc", 'wb') as f:
-        f.write(compressed)
+        for b in tqdm(compressed, desc="Saving .enc", unit="B"):
+            f.write(bytes([b]))
+
     size = len(compressed)
     prime = find_nearest_prime_around(size // 2)
     print(f"Compressed size: {size} bytes. Nearest prime: {prime}")
@@ -118,22 +157,28 @@ def encode_with_paq():
 def decode_with_paq():
     input_file = input("Enter .enc file: ")
     output_file = input("Enter output file: ")
+
     if not os.path.exists(input_file):
         print("File not found.")
         return
+
     with open(input_file, 'rb') as f:
         compressed = f.read()
+
     decompressed = paq.decompress(compressed)
     recovered = transform_with_pattern(decompressed)
+
     with open(output_file, 'wb') as f:
-        f.write(recovered)
+        for b in tqdm(recovered, desc="Writing decompressed", unit="B"):
+            f.write(bytes([b]))
+
     print("Decoded and saved.")
 
 # === Main Menu ===
 def main():
     print("Created by Jurijus Pacalovas")
     print("Choose compression system:")
-    print("1. Smart Compressor (Huffman, reversible, dictionary)")
+    print("1. Smart Compressor (Huffman + Reversible)")
     print("2. XOR + PAQ Compressor")
     choice = input("Enter 1 or 2: ")
 
