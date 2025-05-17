@@ -7,7 +7,7 @@ import logging
 import hashlib
 from tqdm import tqdm
 
-# Try to import paq
+# === Try to import paq ===
 try:
     import paq
 except ImportError:
@@ -50,10 +50,12 @@ class SmartCompressor:
         return data
 
     def huffman_compress(self, data):
-        return paq.compress(data)
+        compressed = paq.compress(data)
+        return bytearray(tqdm(compressed, desc="Huffman Compress", unit="B"))
 
     def huffman_decompress(self, data):
-        return paq.decompress(data)
+        decompressed = paq.decompress(data)
+        return bytearray(tqdm(decompressed, desc="Huffman Decompress", unit="B"))
 
     def reversible_transform(self, data):
         return bytes([b ^ 0xAA for b in tqdm(data, desc="Transforming", unit="B")])
@@ -90,8 +92,7 @@ class SmartCompressor:
 
         if len(compressed) < len(original_data):
             with open(output_file, "wb") as f:
-                for b in tqdm(compressed, desc="Writing compressed", unit="B"):
-                    f.write(bytes([b]))
+                f.write(compressed)
             print(f"Smart compression successful. Saved to {output_file}")
         else:
             print("Compression not efficient. File not saved.")
@@ -104,8 +105,7 @@ class SmartCompressor:
         original = self.reverse_reversible_transform(decompressed)
 
         with open(output_file, "wb") as f:
-            for b in tqdm(original, desc="Writing decompressed", unit="B"):
-                f.write(bytes([b]))
+            f.write(original)
 
         print(f"Smart decompression complete. Saved to {output_file}")
 
@@ -118,18 +118,24 @@ def transform_with_pattern(data, chunk_size=4):
     return transformed
 
 def is_prime(n):
-    if n < 2: return False
-    if n == 2: return True
-    if n % 2 == 0: return False
+    if n < 2:
+        return False
+    if n == 2:
+        return True
+    if n % 2 == 0:
+        return False
     for i in range(3, int(n**0.5)+1, 2):
-        if n % i == 0: return False
+        if n % i == 0:
+            return False
     return True
 
 def find_nearest_prime_around(n):
     offset = 0
     while True:
-        if is_prime(n - offset): return n - offset
-        if is_prime(n + offset): return n + offset
+        if is_prime(n - offset):
+            return n - offset
+        if is_prime(n + offset):
+            return n + offset
         offset += 1
 
 def encode_with_paq():
@@ -145,10 +151,10 @@ def encode_with_paq():
 
     transformed = transform_with_pattern(original)
     compressed = paq.compress(bytes(transformed))
+    compressed = bytearray(tqdm(compressed, desc="PAQ Compress", unit="B"))
 
     with open(output_file + ".enc", 'wb') as f:
-        for b in tqdm(compressed, desc="Saving .enc", unit="B"):
-            f.write(bytes([b]))
+        f.write(compressed)
 
     size = len(compressed)
     prime = find_nearest_prime_around(size // 2)
@@ -166,11 +172,11 @@ def decode_with_paq():
         compressed = f.read()
 
     decompressed = paq.decompress(compressed)
+    decompressed = bytearray(tqdm(decompressed, desc="PAQ Decompress", unit="B"))
     recovered = transform_with_pattern(decompressed)
 
     with open(output_file, 'wb') as f:
-        for b in tqdm(recovered, desc="Writing decompressed", unit="B"):
-            f.write(bytes([b]))
+        f.write(recovered)
 
     print("Decoded and saved.")
 
