@@ -42,12 +42,12 @@ class SmartCompressor:
         return data
 
     def huffman_compress(self, data):
-        # paq.compress expects bytes, ensure data is bytes
+        # paq.compress expects bytes
         compressed = paq.compress(data)
         return compressed
 
     def huffman_decompress(self, data):
-        # paq.decompress expects bytes, ensure data is bytes
+        # paq.decompress expects bytes
         decompressed = paq.decompress(data)
         return decompressed
 
@@ -70,27 +70,28 @@ class SmartCompressor:
             return None
 
     def compress(self, input_file, output_file):
-        if input_file.endswith(".paq") and (
-            "words" in input_file or "lines" in input_file or "sentence" in input_file
-        ):
+        # Special case: For certain .paq dictionary files output only 8-byte SHA in one file
+        if input_file.endswith(".paq") and any(x in input_file for x in ["words", "lines", "sentence"]):
             sha = self.generate_8byte_sha(input_file)
             if sha:
-                with open(output_file, "wb") as f:
-                    f.write(sha)
-                print(f"SHA-8 written to {output_file}: {sha.hex()}")
+                original_size = os.path.getsize(input_file)
+                if 8 < original_size:
+                    with open(output_file, "wb") as f:
+                        f.write(sha)
+                    print(f"SHA-8 written to {output_file}: {sha.hex()}")
+                else:
+                    print("Original file smaller than SHA hash, skipping write.")
             return
 
+        # Normal compression flow
         with open(input_file, "rb") as f:
             original_data = f.read()
 
         transformed = self.reversible_transform(original_data)
+        transformed = bytes(tqdm(transformed, desc="Preparing Data", unit="B"))
 
-        transformed = bytearray(tqdm(transformed, desc="Preparing Data", unit="B"))
-
-        # Fix: convert to bytes before compression
-        compressed = self.huffman_compress(bytes(transformed))
-
-        compressed = bytearray(tqdm(compressed, desc="Compressed Output", unit="B"))
+        compressed = self.huffman_compress(transformed)
+        compressed = bytes(tqdm(compressed, desc="Compressed Output", unit="B"))
 
         if len(compressed) < len(original_data):
             with open(output_file, "wb") as f:
@@ -103,10 +104,8 @@ class SmartCompressor:
         with open(input_file, "rb") as f:
             compressed_data = f.read()
 
-        # Fix: convert to bytes before decompression
         decompressed = self.huffman_decompress(bytes(compressed_data))
-
-        decompressed = bytearray(tqdm(decompressed, desc="Huffman Decompress", unit="B"))
+        decompressed = bytes(tqdm(decompressed, desc="Huffman Decompress", unit="B"))
 
         original = self.reverse_reversible_transform(decompressed)
 
