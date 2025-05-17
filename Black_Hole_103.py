@@ -2,11 +2,27 @@ import heapq
 import os
 import re
 import hashlib
-import paq  # You must ensure this exists (placeholder for PAQ8PX or a wrapper)
 import zlib
+import paq  # Placeholder module for PAQ
 from tqdm import tqdm
 
-# === Utility Functions ===
+# === Huffman & Utility Functions ===
+
+def build_huffman_tree(frequencies):
+    heap = [[weight, [symbol, ""]] for symbol, weight in frequencies.items()]
+    heapq.heapify(heap)
+    while len(heap) > 1:
+        lo = heapq.heappop(heap)
+        hi = heapq.heappop(heap)
+        for pair in lo[1:]:
+            pair[1] = "0" + pair[1]
+        for pair in hi[1:]:
+            pair[1] = "1" + pair[1]
+        heapq.heappush(heap, [lo[0] + hi[0]] + lo[1:] + hi[1:])
+    return sorted(heapq.heappop(heap)[1:], key=lambda p: p[1])
+
+def create_huffman_codes(tree):
+    return {symbol: code for symbol, code in tree}
 
 def int_to_3bytes(value):
     return bytes([(value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF])
@@ -18,7 +34,9 @@ def sha256_hash(data):
     return hashlib.sha256(data).hexdigest()
 
 def transform_with_pattern(data):
-    return bytearray([b ^ 0xFF for b in data])  # XOR transform
+    return bytearray([b ^ 0xFF for b in data])
+
+# === Leading Zero Compression Logic ===
 
 def encode_leading_zeros(data):
     count = 0
@@ -26,7 +44,7 @@ def encode_leading_zeros(data):
     while count < len(data) and data[count] == 0x00 and count < max_count:
         count += 1
     remainder = data[count:]
-    header = bytes([(count & 0x1F) << 3])  # 5 bits used
+    header = bytes([(count & 0x1F) << 3])
     return header + remainder
 
 def decode_leading_zeros(data):
@@ -36,134 +54,162 @@ def decode_leading_zeros(data):
     leading = bytes([0x00] * count)
     return leading + data[1:]
 
-# === Dictionary Builder ===
-
-def build_dictionary_from_input(input_filename, dictionary_filename):
-    words = set()
-    with open(input_filename, 'r', encoding='utf-8', errors='ignore') as infile:
-        for line in infile:
-            for word in re.findall(r'\w+', line):
-                words.add(word.strip())
-
-    sorted_words = sorted(words)
-    with open(dictionary_filename, 'w', encoding='utf-8') as outfile:
-        for word in sorted_words:
-            outfile.write(f"{word}\n")
-    print(f"Dictionary saved as {dictionary_filename} with {len(sorted_words)} words.")
-
-    # Optionally compress dictionary with PAQ
-    with open(dictionary_filename, 'rb') as f:
-        compressed = paq.compress(f.read())
-    with open(dictionary_filename + ".paq", 'wb') as f:
-        f.write(compressed)
-    print(f"Dictionary compressed to {dictionary_filename}.paq")
-
-# === Compression Helpers ===
-
-def load_dictionary_from_file(filename, max_lines=2**24):
-    dictionary = {}
-    try:
-        with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
-            for idx, line in enumerate(f):
-                if idx >= max_lines:
-                    break
-                parts = line.strip().split()
-                if len(parts) > 0:
-                    dictionary[parts[0]] = idx
-        return dictionary
-    except Exception as e:
-        print(f"Dictionary load error: {e}")
-        return None
-
-def compress_text_with_dictionary(text, dictionary):
-    result = bytearray()
-    tokens = re.findall(r'\S+|\s+', text)
-    for token in tokens:
-        if token.isspace():
-            result.append(2)
-            encoded = token.encode('utf-8')
-            result.append(len(encoded))
-            result += encoded
-        else:
-            code = dictionary.get(token)
-            if code is not None:
-                result.append(1)
-                result += int_to_3bytes(code)
-            else:
-                result.append(0)
-                raw = token.encode('utf-8', errors='ignore')
-                result.append(len(raw))
-                result += raw
-    return bytes(result)
-
-def decompress_text_with_dictionary(data, dictionary):
-    reverse_dict = {v: k for k, v in dictionary.items()}
-    i = 0
-    result = []
-    while i < len(data):
-        flag = data[i]
-        i += 1
-        if flag == 1:
-            code = bytes3_to_int(data[i:i+3])
-            i += 3
-            word = reverse_dict.get(code, "")
-            result.append(word)
-        elif flag == 0:
-            length = data[i]
-            i += 1
-            word = data[i:i+length].decode('utf-8', errors='ignore')
-            result.append(word)
-            i += length
-        elif flag == 2:
-            length = data[i]
-            i += 1
-            space = data[i:i+length].decode('utf-8', errors='ignore')
-            result.append(space)
-            i += length
-    return ''.join(result)
+# === Compression Steps ===
 
 def compress_bytes_paq_xor(data):
-    transformed = transform_with_pattern(data)
-    encoded = encode_leading_zeros(transformed)
+    transformed_data = transform_with_pattern(data)
+    encoded = encode_leading_zeros(transformed_data)
     return paq.compress(encoded)
 
 def decompress_bytes_paq_xor(data):
     try:
-        decompressed = paq.decompress(data)
-        restored = decode_leading_zeros(decompressed)
+        decompressed_data = paq.decompress(data)
+        restored = decode_leading_zeros(decompressed_data)
         return transform_with_pattern(bytearray(restored))
     except Exception as e:
         print(f"Decompression error: {e}")
         return None
 
-# === Main Compress/Decompress Wrappers ===
+# === Dictionary Handling ===
 
-def compress_text(input_filename, output_filename, dictionary_filename):
+def build_multiple_dictionaries(text):
+    words = set(re.findall(r'\b\w+\b', text))
+    lines = set(text.splitlines())
+    sentences = set(re.split(r'(?<=[.!?]) +', text))
+
+    with open("words.txt", 'w', encoding='utf-8') as f:
+        for word in sorted(words):
+            f.write(f"{word}\n")
+
+    with open("lines.txt", 'w', encoding='utf-8') as f:
+        for line in sorted(lines):
+            f.write(f"{line}\n")
+
+    with open("sentences.txt", 'w', encoding='utf-8') as f:
+        for sentence in sorted(sentences):
+            f.write(f"{sentence}\n")
+
+    for fname in ("words.txt", "lines.txt", "sentences.txt"):
+        with open(fname, 'rb') as f:
+            data = f.read()
+        with open(fname + ".paq", 'wb') as f:
+            f.write(paq.compress(data))
+
+def load_dictionary(filename, max_lines=2**24):
+    dictionary = {}
     try:
-        dictionary = load_dictionary_from_file(dictionary_filename)
-        if dictionary is None:
-            print("Failed to load dictionary.")
-            return
-        text = ""
+        with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+            for idx, line in enumerate(tqdm(f, total=max_lines, desc=f"Loading {filename}")):
+                if idx >= max_lines:
+                    break
+                item = line.strip()
+                if item:
+                    dictionary[item] = idx
+        return dictionary
+    except Exception as e:
+        print(f"Dictionary load error for {filename}: {e}")
+        return None
+
+# === Encoding / Decoding ===
+
+def compress_text_with_dictionary(text, word_dict, line_dict, sent_dict):
+    result = bytearray()
+    lines = text.splitlines(keepends=True)
+    for line in tqdm(lines, desc="Encoding lines"):
+        if line.strip() in line_dict:
+            result.append(3)
+            result += int_to_3bytes(line_dict[line.strip()])
+        else:
+            sentences = re.split(r'(?<=[.!?]) +', line)
+            for sentence in sentences:
+                if sentence.strip() in sent_dict:
+                    result.append(2)
+                    result += int_to_3bytes(sent_dict[sentence.strip()])
+                else:
+                    words = re.findall(r'\S+|\s+', sentence)
+                    for token in words:
+                        if token.isspace():
+                            result.append(5)
+                            encoded = token.encode('utf-8')
+                            result += len(encoded).to_bytes(2, 'big')
+                            result += encoded
+                        else:
+                            code = word_dict.get(token)
+                            if code is not None:
+                                result.append(1)
+                                result += int_to_3bytes(code)
+                            else:
+                                result.append(0)
+                                raw = token.encode('utf-8')
+                                result += len(raw).to_bytes(2, 'big')
+                                result += raw
+    return bytes(result)
+
+def decompress_text_with_dictionary(data, word_dict, line_dict, sent_dict):
+    word_rev = {v: k for k, v in word_dict.items()}
+    line_rev = {v: k for k, v in line_dict.items()}
+    sent_rev = {v: k for k, v in sent_dict.items()}
+
+    i = 0
+    result = []
+    while i < len(data):
+        flag = data[i]
+        i += 1
+        if flag == 1:  # Word
+            code = bytes3_to_int(data[i:i+3])
+            result.append(word_rev.get(code, ""))
+            i += 3
+        elif flag == 0:  # Raw token
+            length = int.from_bytes(data[i:i+2], 'big')
+            i += 2
+            result.append(data[i:i+length].decode('utf-8'))
+            i += length
+        elif flag == 2:  # Sentence
+            code = bytes3_to_int(data[i:i+3])
+            result.append(sent_rev.get(code, ""))
+            i += 3
+        elif flag == 3:  # Line
+            code = bytes3_to_int(data[i:i+3])
+            result.append(line_rev.get(code, "") + "\n")
+            i += 3
+        elif flag == 5:  # Space
+            length = int.from_bytes(data[i:i+2], 'big')
+            i += 2
+            result.append(data[i:i+length].decode('utf-8'))
+            i += length
+    return ''.join(result)
+
+# === Main Compression Interface ===
+
+def compress_text(input_filename, output_filename):
+    try:
         with open(input_filename, 'r', encoding='utf-8', errors='ignore') as infile:
-            for line in infile:
-                text += line
+            text = infile.read()
+
         original_hash = sha256_hash(text.encode('utf-8'))
-        encoded = compress_text_with_dictionary(text, dictionary)
+        build_multiple_dictionaries(text)
+        word_dict = load_dictionary("words.txt")
+        line_dict = load_dictionary("lines.txt")
+        sent_dict = load_dictionary("sentences.txt")
+        if not word_dict or not line_dict or not sent_dict:
+            print("Failed to load one or more dictionaries.")
+            return
+
+        encoded = compress_text_with_dictionary(text, word_dict, line_dict, sent_dict)
         compressed = compress_bytes_paq_xor(encoded)
+
         with open(output_filename, 'wb') as outfile:
             outfile.write(compressed)
-        print(f"Text compressed to {output_filename}")
+
+        print(f"Compressed to {output_filename}")
         print(f"Original SHA-256: {original_hash}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Compression error: {e}")
 
 def compress_binary(input_filename, output_filename):
     try:
-        data = bytearray()
         with open(input_filename, 'rb') as infile:
-            while chunk := infile.read(8192):
-                data.extend(chunk)
+            data = infile.read()
         compressed = compress_bytes_paq_xor(data)
         with open(output_filename, 'wb') as outfile:
             outfile.write(compressed)
@@ -176,45 +222,44 @@ def decompress_binary(input_filename, output_filename):
         with open(input_filename, 'rb') as infile:
             data = infile.read()
         decompressed = decompress_bytes_paq_xor(data)
-        if decompressed is not None:
-            choice = input("Use dictionary for decoding? (yes/no): ").lower()
-            if choice == 'yes':
-                dict_filename = input("Enter dictionary filename: ")
-                dictionary = load_dictionary_from_file(dict_filename)
-                if dictionary is None:
-                    print("Failed to load dictionary.")
-                    return
-                text = decompress_text_with_dictionary(decompressed, dictionary)
-                with open(output_filename, 'w', encoding='utf-8') as outfile:
-                    outfile.write(text)
-                print(f"Text decompressed to {output_filename}")
-                print(f"SHA-256: {sha256_hash(text.encode('utf-8'))}")
-            else:
-                with open(output_filename, 'wb') as outfile:
-                    outfile.write(decompressed)
-                print(f"Binary decompressed to {output_filename}")
+        if decompressed is None:
+            return
+        choice = input("Use dictionary for decoding? (yes/no): ").lower()
+        if choice == 'yes':
+            for file in ("words.txt.paq", "lines.txt.paq", "sentences.txt.paq"):
+                with open(file, 'rb') as f:
+                    raw = paq.decompress(f.read())
+                with open(file.replace('.paq', ''), 'wb') as f:
+                    f.write(raw)
+            word_dict = load_dictionary("words.txt")
+            line_dict = load_dictionary("lines.txt")
+            sent_dict = load_dictionary("sentences.txt")
+            text = decompress_text_with_dictionary(decompressed, word_dict, line_dict, sent_dict)
+            with open(output_filename, 'w', encoding='utf-8') as outfile:
+                outfile.write(text)
+            print(f"Decompressed text to {output_filename}")
+            print(f"SHA-256: {sha256_hash(text.encode('utf-8'))}")
+        else:
+            with open(output_filename, 'wb') as outfile:
+                outfile.write(decompressed)
+            print(f"Decompressed binary to {output_filename}")
     except Exception as e:
         print(f"Decompression error: {e}")
 
 # === CLI ===
 
 if __name__ == "__main__":
-    print("Choose mode: [1] Build dictionary, [2] Compress text, [3] Compress binary, [4] Decompress binary")
-    mode = input("Enter choice: ")
-    if mode == "1":
-        input_file = input("Enter input filename to extract dictionary from: ")
-        dict_file = "words.txt"
-        build_dictionary_from_input(input_file, dict_file)
-    elif mode == "2":
+    print("Choose mode: [1] Compress text, [2] Compress binary, [3] Decompress binary")
+    choice = input("Enter choice: ")
+    if choice == "1":
         input_filename = input("Enter input text filename: ")
         output_filename = input("Enter output filename: ")
-        dictionary_filename = input("Enter dictionary filename: ")
-        compress_text(input_filename, output_filename, dictionary_filename)
-    elif mode == "3":
+        compress_text(input_filename, output_filename)
+    elif choice == "2":
         input_filename = input("Enter input binary filename: ")
         output_filename = input("Enter output filename: ")
         compress_binary(input_filename, output_filename)
-    elif mode == "4":
+    elif choice == "3":
         input_filename = input("Enter compressed filename: ")
         output_filename = input("Enter output filename: ")
         decompress_binary(input_filename, output_filename)
