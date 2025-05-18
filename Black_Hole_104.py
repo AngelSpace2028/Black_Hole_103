@@ -272,7 +272,7 @@ class DictionaryCompressor:
                 if not found:
                     result.append("[UNKNOWN]")
             else:
-                result.append(f"[FALLBACK:{int.from_bytes(compressed, 'big')}]")
+                result.append(f"")
             
             i += 2 + chunk_len
 
