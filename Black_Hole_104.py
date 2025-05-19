@@ -15,16 +15,14 @@ except ImportError:
 # === Dictionary file list ===
 DICTIONARY_FILES = [
     "1.txt", "eng_news_2005_1M-sentences.txt", "eng_news_2005_1M-words.txt",
-    "eng_news_2005_1M-sources.txt", "eng_news_2005_1M-co_n.txt",
-    "eng_news_2005_1M-co_s.txt", "eng_news_2005_1M-inv_so.txt",
-    "eng_news_2005_1M-meta.txt", "Dictionary.txt",
+    "eng_news_2005_1M-sources.txt", "eng_news_2005_1M-co_n.txt", "eng_news_2005_1M-co_s.txt",
+    "eng_news_2005_1M-inv_so.txt", "eng_news_2005_1M-meta.txt", "Dictionary.txt",
     "the-complete-reference-html-css-fifth-edition.txt",
     "words.txt.paq", "lines.txt.paq", "sentence.txt.paq"
 ]
 
 # === Prime numbers from 2 to 255 ===
 PRIMES = [p for p in range(2, 256) if all(p % d != 0 for d in range(2, int(p ** 0.5) + 1))]
-
 
 # === Smart Compressor ===
 class SmartCompressor:
@@ -88,12 +86,10 @@ class SmartCompressor:
         compressed = self.huffman_compress(transformed)
         compressed = bytes(tqdm(compressed, desc="Compressed Output", unit="B"))
 
-        if len(compressed) < len(original_data):
-            with open(output_file, "wb") as f:
-                f.write(compressed)
-            print(f"Smart compression successful. Saved to {output_file}")
-        else:
-            print("Compression not efficient. File not saved.")
+        with open(output_file, "wb") as f:
+            f.write(compressed)
+
+        print(f"Smart compression complete. Saved to {output_file}")
 
     def decompress(self, input_file, output_file):
         with open(input_file, "rb") as f:
@@ -109,7 +105,6 @@ class SmartCompressor:
 
         print(f"Smart decompression complete. Saved to {output_file}")
 
-
 # === XOR with Prime (every 3 bytes, repeated 1000 times) ===
 def transform_with_prime_xor_every_3_bytes(data, repeat=1000):
     transformed = bytearray(data)
@@ -121,7 +116,6 @@ def transform_with_prime_xor_every_3_bytes(data, repeat=1000):
                     transformed[i] ^= xor_val
     return transformed
 
-
 # === Simple Encoder/Decoder ===
 def transform_with_pattern(data, chunk_size=4):
     transformed = bytearray()
@@ -129,7 +123,6 @@ def transform_with_pattern(data, chunk_size=4):
         chunk = data[i:i + chunk_size]
         transformed.extend([b ^ 0xFF for b in chunk])
     return transformed
-
 
 def is_prime(n):
     if n < 2: return False
@@ -139,14 +132,12 @@ def is_prime(n):
         if n % i == 0: return False
     return True
 
-
 def find_nearest_prime_around(n):
     offset = 0
     while True:
         if is_prime(n - offset): return n - offset
         if is_prime(n + offset): return n + offset
         offset += 1
-
 
 def encode_with_compression():
     print("\nSimple Encoder (XOR + PAQ Compression)")
@@ -168,8 +159,7 @@ def encode_with_compression():
             original_data = f.read()
 
         transformed_data = transform_with_pattern(original_data)
-        transformed_data_bytes = bytes(transformed_data)
-        compressed_data = paq.compress(transformed_data_bytes)
+        compressed_data = paq.compress(bytes(transformed_data))
 
         with open(output_enc, 'wb') as f:
             f.write(compressed_data)
@@ -182,7 +172,6 @@ def encode_with_compression():
         print(f"Encoding complete. Saved to {output_enc}")
     except Exception as e:
         print(f"Encoding error: {e}")
-
 
 def decode_with_compression():
     print("\nSimple Decoder (PAQ Decompression + XOR)")
@@ -210,7 +199,6 @@ def decode_with_compression():
         print(f"Decoding complete. Output saved to {output_file}")
     except Exception as e:
         print(f"Decoding error: {e}")
-
 
 # === Unified Main Menu ===
 def main():
@@ -246,7 +234,6 @@ def main():
             print("Invalid encode/decode choice.")
     else:
         print("Invalid main choice.")
-
 
 if __name__ == "__main__":
     main()
